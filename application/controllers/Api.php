@@ -26,7 +26,7 @@ class Api extends REST_Controller {
     public function getAccessToken_get() {
         $appID = "326913b13b5942409a38065259977d49";
         $appCertificate = "8a14d2f37ad543c099bd00a516327fdb";
-        $channelName = "Test";
+        $channelName = rand(10000, 999999);
         $uid = 0;
         $uidStr = "0";
         $role = RtcTokenBuilder::RoleAttendee;
@@ -40,7 +40,7 @@ class Api extends REST_Controller {
         $token = RtcTokenBuilder::buildTokenWithUserAccount($appID, $appCertificate, $channelName, $uidStr, $role, $privilegeExpiredTs);
        // echo 'Token with user account: ' . $token . PHP_EOL;
         
-        $this->response(array('token'=>$token));
+        $this->response(array('token'=>$token, "channel"=>$channelName));
         
     }
 
