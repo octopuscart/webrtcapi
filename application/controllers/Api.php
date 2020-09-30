@@ -23,10 +23,10 @@ class Api extends REST_Controller {
         $this->load->view('welcome_message');
     }
 
-    public function getAccessToken_get() {
+    public function getAccessToken_get($sender_id, $receiver_id) {
         $appID = "326913b13b5942409a38065259977d49";
         $appCertificate = "8a14d2f37ad543c099bd00a516327fdb";
-        $channelName = "myc".rand(10000, 999999);
+        $channelName = "myc" . rand(10000, 999999);
         $uid = 0;
         $uidStr = "0";
         $role = RtcTokenBuilder::RoleAttendee;
@@ -38,9 +38,47 @@ class Api extends REST_Controller {
 //        echo 'Token with int uid: ' . $token;
 
         $token = RtcTokenBuilder::buildTokenWithUserAccount($appID, $appCertificate, $channelName, $uidStr, $role, $privilegeExpiredTs);
-       // echo 'Token with user account: ' . $token . PHP_EOL;
-        
-        $this->response(array('token'=>$token, "channel"=>$channelName));
+        // echo 'Token with user account: ' . $token . PHP_EOL;
+
+        $insertArray = array(
+            "token" => $token,
+            "channel" => $channelName,
+            "sender_id" => $sender_id,
+            "receiver_id" => $receiver_id,
+            "status" => "calling"
+        );
+        $this->db->insert("videocall", $insertArray);
+
+        $this->response(array('token' => $token, "channel" => $channelName));
+    }
+
+    function getVideoCall_get($user_id) {
+        $this->db->where("receiver_id", $user_id);
+        $this->db->where("status", "calling");
+        $query = $this->db->get('videocall');
+        $userlistdata = $query->result_array();
+
+        $this->db->where("id", $userlistdata[0]['sender_id']);
+        $query = $this->db->get('app_user');
+        $senderdata = $query->result_array();
+        $callobj = array();
+        if ($userlistdata) {
+            $callobj = $userlistdata[0];
+            $callobj['name'] = $senderdata[0]['name'];
+            $callobj['contact_no'] = $senderdata[0]['contact_no'];
+        }
+        $this->response($callobj);
+    }
+    
+    
+    
+    
+     function getVideoCallStatus_get($channel, $status) {
+   
+            $data = array("status" => "$status");
+            $this->db->set($data);
+            $this->db->where("channel", $channel);
+            $this->db->update(videocall, $data);
         
     }
 
@@ -321,7 +359,8 @@ class Api extends REST_Controller {
         $this->response(array("status" => "done", "data" => $regArray));
     }
 
-    function getUserList_get() {
+    function getUserList_get($user_id) {
+        $this->db->where("id!=" . $user_id);
         $this->db->order_by("id desc");
         $query = $this->db->get('app_user');
         $userlistdata = $query->result_array();
