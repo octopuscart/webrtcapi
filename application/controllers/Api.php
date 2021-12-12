@@ -8,7 +8,7 @@ class Api extends REST_Controller {
 
     public function __construct() {
         parent::__construct();
-        $this->API_ACCESS_KEY = 'AIzaSyBlRI5PaIZ6FJPwOdy0-hc8bTiLF5Lm0FQ';
+        $this->API_ACCESS_KEY = "AAAAMrifI78:APA91bEW_lzyKfgT4oV_D2y2ULbpecWEiKwGb-alR_V6-I7uVkJ3WlzzMeeNIAgEgaGn4z7AP2jDxLwfsYqPcc4fNBLFMjqaskCmqD1-JP8R5ujirEg-ZsV-Axa4Wc8ZDsd36dvl1Tgd";
         // (iOS) Private key's passphrase.
         $this->passphrase = 'joashp';
         // (Windows Phone 8) The name of our push channel.
@@ -21,6 +21,82 @@ class Api extends REST_Controller {
 
     public function index() {
         $this->load->view('welcome_message');
+    }
+
+    private function useCurl($url, $headers, $fields = null) {
+        // Open connection
+        $ch = curl_init();
+        if ($url) {
+            // Set the url, number of POST vars, POST data
+            curl_setopt($ch, CURLOPT_URL, $url);
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+
+            // Disabling SSL Certificate support temporarly
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            if ($fields) {
+                curl_setopt($ch, CURLOPT_POSTFIELDS, $fields);
+            }
+
+            // Execute post
+            $result = curl_exec($ch);
+            if ($result === FALSE) {
+                die('Curl failed: ' . curl_error($ch));
+            }
+
+            // Close connection
+            curl_close($ch);
+
+            return $result;
+        }
+    }
+
+    public function android($data, $reg_id_array) {
+        $url = 'https://fcm.googleapis.com/fcm/send';
+        $headers = array(
+            'Authorization: key=' . $this->API_ACCESS_KEY,
+            'Content-Type: application/json'
+        );
+        return $this->useCurl($url, $headers, json_encode($data));
+    }
+
+    function sendCallNotification($receiver_id, $sender_id) {
+        $reg_id = $this->singleUserGCMToken($receiver_id);
+        $tokenid = $reg_id;
+        $userobj = $this->singleUser($sender_id);
+        //$tokenid = "dV_EyWWoTgeZnUlZanHft3:APA91bETNd6OrqnRBMhZhu-zeDKgY9TfIlloJKOzaVnxNGkqoyaHB549zyAO4kh-96L53EcglgCflBTZnfSZgtHX_KtInAEFa2RgXaYBe-mfaqkoaSGhxuY_BHpA0fsCSmpFoL-jZyRr";
+        $data = [
+            "to" => $tokenid,
+            "notification" => [
+                "body" => "Incomming Call From",
+                "page" => "chat",
+                "icon" => "ic_launcher",
+                "image" => "https://lh3.googleusercontent.com/a-/AOh14GiB7yiRkI4V4-YdxtDt27CWqF1U-0ZhfQ3mT_96uA"
+            ],
+            "data" => array(
+                "uuid" => $userobj?$userobj["id"]:"",
+                "caller_id" => "MyApple",
+                "caller_name" => $userobj?$userobj["name"]:"",
+                "caller_id_type" => "number",
+                "has_video" => "true"
+            )
+        ];
+        $this->android($data, [$tokenid]);
+    }
+
+    function singleUser($user_id) {
+        $this->db->where('id', $user_id);
+        $query = $this->db->get('app_user');
+        $userdata = $query->row_array();
+        return $userdata;
+    }
+
+    function singleUserGCMToken($user_id) {
+        $this->db->where('user_id', $user_id);
+        $query = $this->db->get('gcm_registration');
+        $userdata = $query->row_array();
+        return $userdata ? $userdata["reg_id"] : "";
     }
 
     public function getAccessToken_get($sender_id, $receiver_id) {
@@ -39,6 +115,8 @@ class Api extends REST_Controller {
 
         $token = RtcTokenBuilder::buildTokenWithUserAccount($appID, $appCertificate, $channelName, $uidStr, $role, $privilegeExpiredTs);
         // echo 'Token with user account: ' . $token . PHP_EOL;
+        
+        $this->sendCallNotification($receiver_id, $sender_id);
 
         $insertArray = array(
             "token" => $token,
@@ -78,167 +156,6 @@ class Api extends REST_Controller {
         $this->db->update(videocall, $data);
     }
 
-    private function useCurl($url, $headers, $fields = null) {
-        // Open connection
-        $ch = curl_init();
-        if ($url) {
-            // Set the url, number of POST vars, POST data
-            curl_setopt($ch, CURLOPT_URL, $url);
-            curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-
-            // Disabling SSL Certificate support temporarly
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-            if ($fields) {
-                curl_setopt($ch, CURLOPT_POSTFIELDS, $fields);
-            }
-
-            // Execute post
-            $result = curl_exec($ch);
-            if ($result === FALSE) {
-                die('Curl failed: ' . curl_error($ch));
-            }
-
-            // Close connection
-            curl_close($ch);
-
-            return $result;
-        }
-    }
-
-    public function android($data, $reg_id_array) {
-        $url = 'https://fcm.googleapis.com/fcm/send';
-
-        $insertArray = array(
-            'title' => $data['title'],
-            'message' => $data['message'],
-            "datetime" => date("Y-m-d H:i:s a")
-        );
-        $this->db->insert("notification", $insertArray);
-
-        $message = array(
-            'title' => $data['title'],
-            'message' => $data['message'],
-            'subtitle' => '',
-            'tickerText' => '',
-            'msgcnt' => 1,
-            'vibrate' => 1
-        );
-
-        $headers = array(
-            'Authorization: key=' . $this->API_ACCESS_KEY,
-            'Content-Type: application/json'
-        );
-
-        $fields = array(
-            'registration_ids' => $reg_id_array,
-            'data' => $message,
-        );
-
-        return $this->useCurl($url, $headers, json_encode($fields));
-    }
-
-    public function androidAdmin($data, $reg_id_array) {
-        $url = 'https://fcm.googleapis.com/fcm/send';
-
-        $insertArray = array(
-            'title' => $data['title'],
-            'message' => $data['message'],
-            "datetime" => date("Y-m-d H:i:s a")
-        );
-        $this->db->insert("notification", $insertArray);
-
-        $message = array(
-            'title' => $data['title'],
-            'message' => $data['message'],
-            'subtitle' => '',
-            'tickerText' => '',
-            'msgcnt' => 1,
-            'vibrate' => 1
-        );
-
-        $headers = array(
-            'Authorization: key=' . "AIzaSyBlRI5PaIZ6FJPwOdy0-hc8bTiLF5Lm0FQ",
-            'Content-Type: application/json'
-        );
-
-        $fields = array(
-            'registration_ids' => $reg_id_array,
-            'data' => $message,
-        );
-
-        return $this->useCurl($url, $headers, json_encode($fields));
-    }
-
-    public function iOS($data, $devicetoken) {
-        $deviceToken = $devicetoken;
-        $ctx = stream_context_create();
-        // ck.pem is your certificate file
-        stream_context_set_option($ctx, 'ssl', 'local_cert', 'ck.pem');
-        stream_context_set_option($ctx, 'ssl', 'passphrase', $this->passphrase);
-        // Open a connection to the APNS server
-        $fp = stream_socket_client(
-                'ssl://gateway.sandbox.push.apple.com:2195', $err,
-                $errstr, 60, STREAM_CLIENT_CONNECT | STREAM_CLIENT_PERSISTENT, $ctx);
-        if (!$fp)
-            exit("Failed to connect: $err $errstr" . PHP_EOL);
-        // Create the payload body
-        $body['aps'] = array(
-            'alert' => array(
-                'title' => $data['mtitle'],
-                'body' => $data['mdesc'],
-            ),
-            'sound' => 'default'
-        );
-        // Encode the payload as JSON
-        $payload = json_encode($body);
-        // Build the binary notification
-        $msg = chr(0) . pack('n', 32) . pack('H*', $deviceToken) . pack('n', strlen($payload)) . $payload;
-        // Send it to the server
-        $result = fwrite($fp, $msg, strlen($msg));
-
-        // Close the connection to the server
-        fclose($fp);
-        if (!$result)
-            return 'Message not delivered' . PHP_EOL;
-        else
-            return 'Message successfully delivered' . PHP_EOL;
-    }
-
-    function broadCastMessgeAdmin($messagedict) {
-        $this->db->where('user_type', "Admin");
-        $query = $this->db->get('gcm_registration');
-        $regarray2 = $query->result_array();
-        $temparray = [];
-        foreach ($regarray2 as $key => $value) {
-            array_push($temparray, $value['reg_id']);
-        }
-        $this->androidAdmin($messagedict, $temparray);
-    }
-
-    function broadCastMessge($messagedict) {
-//        $this->db->where('user_type', "Guest");
-        $query = $this->db->get('gcm_registration');
-        $regarray2 = $query->result_array();
-        $temparray = [];
-        foreach ($regarray2 as $key => $value) {
-            array_push($temparray, $value['reg_id']);
-        }
-        $this->android($messagedict, $temparray);
-    }
-
-    function singleMessage($messagedict, $userid) {
-        $this->db->where('user_id', $userid);
-        $query = $this->db->get('gcm_registration');
-        $regarray2 = $query->result_array();
-        $temparray = [];
-        foreach ($regarray2 as $key => $value) {
-            array_push($temparray, $value['reg_id']);
-        }
-        $this->android($messagedict, $temparray);
-    }
-
     //Login Function 
     //function for product list
     function loginOperation_post() {
@@ -264,14 +181,13 @@ class Api extends REST_Controller {
         $this->db->where('id!=', $user_id);
         $query = $this->db->get('app_user');
         $userdata = $query->result_array();
-        $this->response($userdata);
-    }
-
-    function singleUser($user_id) {
-        $this->db->where('id', $user_id);
-        $query = $this->db->get('app_user');
-        $userdata = $query->row_array();
-        return $userdata;
+        $finaluser = [];
+        foreach ($userdata as $key => $value) {
+            $value["presence"] = "Offline";
+            $value["presence_datetime"] = "";
+            array_push($finaluser, $value);
+        }
+        $this->response($finaluser);
     }
 
     function getCall_get($receiver_id) {
@@ -289,6 +205,51 @@ class Api extends REST_Controller {
         $this->db->set('status', $status);
         $query = $this->db->update('videocall');
         $this->response(array("status" => $status));
+    }
+
+    function setFCMToken_post() {
+        $postdata = $this->post();
+        $insertArray = array(
+            "model" => "",
+            "manufacturer" => "",
+            "uuid" => "",
+            "datetime" => date("Y-m-d H:m:s a"),
+            "user_id" => $postdata["user_id"],
+            "reg_id" => $postdata["token_id"],
+        );
+        $this->db->where("user_id", $postdata["user_id"]);
+        $query = $this->db->get("gcm_registration");
+        $querydata = $query->result_array();
+        if ($querydata) {
+            $this->db->set($insertArray)->where("user_id", $postdata["user_id"])->update("gcm_registration");
+            $this->response(array("status" => "200", "last_id" => $querydata[0]["id"]));
+        } else {
+            $this->db->insert("gcm_registration", $insertArray);
+            $insert_id = $this->db->insert_id();
+        }
+        $this->response(array("status" => "200", "last_id" => $insert_id));
+    }
+
+    function testNotification_get() {
+        $tokenid = "f5HkMsqbTTucMq_sjk4z6J:APA91bGPM5wiz4K5s12O63Bl1H6m5rcu4auZfAdF_wvmanpejiD06jvzCSXjgNxpcs6SzPvZILqo9lYGU2RFzQ_Yz5M1YfyM0IZsmrsyZyjVyusApfigMD8Usd8hn7_qtGXGcVdyMNcs";
+        //$tokenid = "dV_EyWWoTgeZnUlZanHft3:APA91bETNd6OrqnRBMhZhu-zeDKgY9TfIlloJKOzaVnxNGkqoyaHB549zyAO4kh-96L53EcglgCflBTZnfSZgtHX_KtInAEFa2RgXaYBe-mfaqkoaSGhxuY_BHpA0fsCSmpFoL-jZyRr";
+        $data = [
+            "to" => $tokenid,
+            "notification" => [
+                "body" => "This is message body 32322323 ",
+                "page" => "chat",
+                "icon" => "ic_launcher",
+                "image" => "https://lh3.googleusercontent.com/a-/AOh14GiB7yiRkI4V4-YdxtDt27CWqF1U-0ZhfQ3mT_96uA"
+            ],
+            "data" => array(
+                "uuid" => "xxxxx-xxxxx-xxxxx-xxxxx",
+                "caller_id" => "Pankaj Pathyak",
+                "caller_name" => "Draco",
+                "caller_id_type" => "number",
+                "has_video" => "true"
+            )
+        ];
+        echo $this->android($data, [$tokenid]);
     }
 
 }
