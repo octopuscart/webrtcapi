@@ -231,8 +231,8 @@ class Api extends REST_Controller {
     }
 
     function testNotification_get() {
-        $tokenid = "f5HkMsqbTTucMq_sjk4z6J:APA91bGPM5wiz4K5s12O63Bl1H6m5rcu4auZfAdF_wvmanpejiD06jvzCSXjgNxpcs6SzPvZILqo9lYGU2RFzQ_Yz5M1YfyM0IZsmrsyZyjVyusApfigMD8Usd8hn7_qtGXGcVdyMNcs";
-        //$tokenid = "dV_EyWWoTgeZnUlZanHft3:APA91bETNd6OrqnRBMhZhu-zeDKgY9TfIlloJKOzaVnxNGkqoyaHB549zyAO4kh-96L53EcglgCflBTZnfSZgtHX_KtInAEFa2RgXaYBe-mfaqkoaSGhxuY_BHpA0fsCSmpFoL-jZyRr";
+        $tokenid = "c3m5tbYuQmmYXCJvi_FyMk:APA91bG8CgKAbE2Tqg_Bxd_4kjtpQy5ydyNKFi2KfyCI668G8P5vwaxHe3Ie5JR9FcXHjmU2su9sFo2hr9_IY2djytPQHn_zanqgBXknNiCaSN5wQZCEEHABqOBcyt9uuycQTbYChp0q";
+        $tokenid = "f2njC-3wT-ehBmvRb9GUff:APA91bE77Jy6Tr1K1AE3c7lDIXNGdqy7ZW73v4uYSZaCYTFLOpucaQFOw0r5tD2ZD9RiEoPjqA2s7o2S1CYPQg6ZKhgJ_NTmZDRm4B7O_dInxPzNzqU6ed0Z9TVa_4CSQEHL3WQCQcNM";
         $data = [
             "to" => $tokenid,
             "notification" => [
