@@ -16,7 +16,7 @@ class Api extends REST_Controller {
 
         $this->load->library('session');
         $this->checklogin = $this->session->userdata('logged_in');
-        $this->user_id = $this->session->userdata('logged_in')['login_id'];
+        $this->user_id = $this->checklogin ? $this->session->userdata('logged_in')['login_id'] : 0;
     }
 
     public function index() {
@@ -85,6 +85,26 @@ class Api extends REST_Controller {
         $this->android($data, [$tokenid]);
     }
 
+    function sendCallNotificationV2($receiver_id, $sender_id, $calldata) {
+        $reg_id = $this->singleUserGCMToken($receiver_id);
+        $tokenid = $reg_id;
+        $userobj = $this->singleUser($sender_id);
+        $name = $userobj ? $userobj["name"] : " Someone";
+        $calldata["name"] = $name;
+        //$tokenid = "dV_EyWWoTgeZnUlZanHft3:APA91bETNd6OrqnRBMhZhu-zeDKgY9TfIlloJKOzaVnxNGkqoyaHB549zyAO4kh-96L53EcglgCflBTZnfSZgtHX_KtInAEFa2RgXaYBe-mfaqkoaSGhxuY_BHpA0fsCSmpFoL-jZyRr";
+        $data = [
+            "to" => $tokenid,
+            "notification" => [
+                "body" => "Incomming Call From $name",
+                "page" => "chat",
+                "icon" => "ic_launcher",
+                "image" => "https://lh3.googleusercontent.com/a-/AOh14GiB7yiRkI4V4-YdxtDt27CWqF1U-0ZhfQ3mT_96uA"
+            ],
+            "data" => $calldata
+        ];
+        $this->android($data, [$tokenid]);
+    }
+
     function singleUser($user_id) {
         $this->db->where('id', $user_id);
         $query = $this->db->get('app_user');
@@ -97,6 +117,24 @@ class Api extends REST_Controller {
         $query = $this->db->get('gcm_registration');
         $userdata = $query->row_array();
         return $userdata ? $userdata["reg_id"] : "";
+    }
+
+    function setCallLog($logarray) {
+        $this->db->insert("user_videocall_log", $logarray);
+        $last_id = $this->db->insert_id();
+    }
+
+    function updateCallStatus_post() {
+        $insertArray = array(
+            "user_videocall_id" => $this->post("user_videocall_id"),
+            "sender_id" => $this->post("sender_id"),
+            "receiver_id" => $this->post("receiver_id"),
+            "status" => $this->post("status"),
+            "call_date" => date("Y-m-d"),
+            "call_time" => date("H:i:s A"),
+            "call_duration" => $this->post("call_duration")
+        );
+        $this->setCallLog($insertArray);
     }
 
     public function getAccessToken_get($sender_id, $receiver_id) {
@@ -116,24 +154,51 @@ class Api extends REST_Controller {
         $token = RtcTokenBuilder::buildTokenWithUserAccount($appID, $appCertificate, $channelName, $uidStr, $role, $privilegeExpiredTs);
         // echo 'Token with user account: ' . $token . PHP_EOL;
 
-        $this->sendCallNotification($receiver_id, $sender_id);
+
 
         $insertArray = array(
             "token" => $token,
             "channel" => $channelName,
             "sender_id" => $sender_id,
             "receiver_id" => $receiver_id,
-            "status" => "calling"
+            "status" => "callinit",
+            "call_date" => date("Y-m-d"),
+            "call_time" => date("H:i:s A"),
+            "call_duration" => ""
         );
-        $this->db->insert("videocall", $insertArray);
+        $this->db->insert("user_videocall", $insertArray);
+        $last_id = $this->db->insert_id();
+        $insertArray["user_videocall_id"] = $last_id;
+        $this->sendCallNotificationV2($receiver_id, $sender_id, $insertArray);
 
-        $this->response(array('token' => $token, "channel" => $channelName));
+        $insertArray = array(
+            "user_videocall_id" => $last_id,
+            "sender_id" => $sender_id,
+            "receiver_id" => $receiver_id,
+            "status" => "Outgoing Call",
+            "call_date" => date("Y-m-d"),
+            "call_time" => date("H:i:s A"),
+            "call_duration" => ""
+        );
+        $this->setCallLog($insertArray);
+        $insertArray = array(
+            "user_videocall_id" => $last_id,
+            "sender_id" => $receiver_id,
+            "receiver_id" => $sender_id,
+            "status" => "Incomming Call",
+            "call_date" => date("Y-m-d"),
+            "call_time" => date("H:i:s A"),
+            "call_duration" => ""
+        );
+        $this->setCallLog($insertArray);
+
+        $this->response(array('token' => $token, "channel" => $channelName, "user_videocall_id" => $last_id));
     }
 
     function getVideoCall_get($user_id) {
         $this->db->where("receiver_id", $user_id);
-        $this->db->where("status", "calling");
-        $query = $this->db->get('videocall');
+        $this->db->where("status", "callinit");
+        $query = $this->db->get('user_videocall');
         $userlistdata = $query->result_array();
 
         $this->db->where("id", $userlistdata[0]['sender_id']);
@@ -153,7 +218,7 @@ class Api extends REST_Controller {
         $data = array("status" => "$status");
         $this->db->set($data);
         $this->db->where("channel", $channel);
-        $this->db->update(videocall, $data);
+        $this->db->update(user_videocall, $data);
     }
 
     //Login Function 
@@ -194,7 +259,7 @@ class Api extends REST_Controller {
         $this->db->where('receiver_id', $receiver_id);
         $this->db->where('status', "calling");
         $this->db->order_by("id desc");
-        $query = $this->db->get('videocall');
+        $query = $this->db->get('user_videocall');
         $userdata = $query->row_array();
         $userdata["user"] = $this->singleUser($userdata["sender_id"]);
         $this->response($userdata);
@@ -203,7 +268,7 @@ class Api extends REST_Controller {
     function setCall_get($receiver_id, $status) {
         $this->db->where('receiver_id', $receiver_id);
         $this->db->set('status', $status);
-        $query = $this->db->update('videocall');
+        $query = $this->db->update('user_videocall');
         $this->response(array("status" => $status));
     }
 
@@ -213,7 +278,7 @@ class Api extends REST_Controller {
             "model" => "",
             "manufacturer" => "",
             "uuid" => "",
-            "datetime" => date("Y-m-d H:m:s a"),
+            "datetime" => date("Y-m-d H:i:s a"),
             "user_id" => $postdata["user_id"],
             "reg_id" => $postdata["token_id"],
         );
@@ -265,9 +330,10 @@ class Api extends REST_Controller {
     //set membership 
     function orderMembership_post() {
         $membershipdata = $this->post();
+
         $daylimit = $membershipdata['valid_days'];
         $current_date = date("Y-m-d");
-        $current_time = date("H:m:s A");
+        $current_time = date("H:i:s A");
         $last_date = date('Y-m-d', strtotime($current_date . " + $daylimit days"));
         $insertArray = array(
             "member_id" => $membershipdata['member_id'],
@@ -288,7 +354,7 @@ class Api extends REST_Controller {
             "payment_id" => "",
             "status" => "Active"
         );
-        $this->db->insert("shadi_member_package", $insertArray);
+        $this->db->insert("user_calling_package", $insertArray);
         $last_id = $this->db->insert_id();
         $responsedata = array("order_id" => $last_id);
         $this->response($responsedata);
@@ -296,14 +362,14 @@ class Api extends REST_Controller {
 
     function ordersList_get($user_id) {
         $this->db->where("user_id", $user_id);
-        $query = $this->db->get("shadi_member_package");
+        $query = $this->db->get("user_calling_package");
         $orders_list = $query->result_array();
         $this->response($orders_list);
     }
 
     function orderDetails_get($order_id) {
         $this->db->where("id", $order_id);
-        $query = $this->db->get("shadi_member_package");
+        $query = $this->db->get("user_calling_package");
         $order_details = $query->row_array();
 
         $this->db->where("id", $order_details["package_id"]);
@@ -311,16 +377,15 @@ class Api extends REST_Controller {
         $packagedetails = $query->row_array();
 
         $this->db->where("id", $order_details["user_id"]);
-        $query = $this->db->get("member_users");
+        $query = $this->db->get("app_user");
         $userdetails = $query->row_array();
 
-        $memberobj = $this->Shadi_model->getShortInformation($order_details['member_id']);
 
         $resultdata = array(
             "order_details" => $order_details,
             "user_details" => $userdetails,
             "package_details" => $packagedetails,
-            "member_details" => $memberobj
+            "member_details" => $userdetails
         );
         $this->response($resultdata);
     }
@@ -333,17 +398,79 @@ class Api extends REST_Controller {
             "coupon_value" => 0,
             "msg" => "Sorry Wrong Coupon Code"
         );
-        if ($coupon_code == "SMC99") {
+        if ($coupon_code == "APPLE99") {
             $coupon_discount = ($total_amount * 99) / 100;
+            if (($total_amount - $coupon_discount) < 1) {
+                $coupon_discount = $total_amount - 1;
+            }
             $couponArray = array(
                 "coupon_id" => "1",
-                "coupon_code" => "SMC99",
+                "coupon_code" => "APPLE99",
                 "discount_amount" => $coupon_discount,
                 "msg" => "Coupon code applied successfully"
             );
         }
 
         $this->response($couponArray);
+    }
+
+    //member package statuss
+    function daysBetween($dt1, $dt2) {
+        return date_diff(
+                        date_create($dt2), date_create($dt1)
+                )->format('%a');
+    }
+
+    function getCurrentPackage_get($member_id) {
+        $current_date = date("Y-m-d");
+        $this->db->select("package_id, last_date, valid_days, sum(contact_limit) as total_contacts, '' as title, '0' as validity, '' as image   ");
+        $this->db->where("member_id", $member_id);
+        $this->db->where("last_date>", $current_date);
+        $this->db->order_by("id desc");
+        $this->db->limit(1);
+        $query = $this->db->get("user_calling_package");
+        $packageobj = $query->row_array();
+        if ($packageobj["total_contacts"]) {
+            $packageobj["status"] = "active";
+        } else {
+            $packageobj["status"] = "inactive";
+            $packageobj["total_contacts"] = "0";
+            $packageobj["last_date"] = "";
+            $packageobj["package_id"] = "";
+            $packageobj["valid_days"] = "";
+        }
+        $packageobj["contact_left"] = 0;
+        $packageobj["contact_used"] = 0;
+        if ($packageobj["status"] == "active") {
+            $this->db->where("id", $packageobj["package_id"]);
+            $query = $this->db->get("set_packages");
+            $packagedetails = $query->row_array();
+            $packageobj["title"] = $packagedetails["title"];
+            $packageobj["image"] = $packagedetails["image"];
+            $packageobj["validity"] = $this->daysBetween($current_date, $packageobj["last_date"]);
+
+//            $this->db->select("count(id) as used_contact");
+//            $this->db->where("member_id", $member_id);
+////            $this->db->group_by("connect_member_id");
+//            $query = $this->db->get("shadi_saved_profile");
+//            $totalusedcontact = $query->row_array();
+            $usedcontact = 0;
+            $packageobj["contact_used"] = $usedcontact;
+            $totalleft = ($packageobj["total_contacts"] - $usedcontact);
+            if ($totalleft > 0) {
+                
+            } else {
+                $packageobj["status"] = "inactive";
+            }
+            $packageobj["contact_left"] = "" . $totalleft;
+        }
+        $this->response($packageobj);
+    }
+
+    function getLastToken_get() {
+        $this->db->order_by("id desc");
+        $query = $this->db->get("user_videocall");
+        print_r($query->row_array());
     }
 
 //
