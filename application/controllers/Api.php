@@ -17,6 +17,7 @@ class Api extends REST_Controller {
         $this->load->library('session');
         $this->checklogin = $this->session->userdata('logged_in');
         $this->user_id = $this->checklogin ? $this->session->userdata('logged_in')['login_id'] : 0;
+        $this->amt_per_minutes = 5;
     }
 
     public function index() {
@@ -85,12 +86,38 @@ class Api extends REST_Controller {
         $this->android($data, [$tokenid]);
     }
 
-    function sendCallNotificationV2($receiver_id, $sender_id, $calldata) {
+    function sendCallNotificationCallCencel($receiver_id, $sender_id, $calldata) {
         $reg_id = $this->singleUserGCMToken($receiver_id);
         $tokenid = $reg_id;
         $userobj = $this->singleUser($sender_id);
         $name = $userobj ? $userobj["name"] : " Someone";
         $calldata["name"] = $name;
+        $calldata["notificationtype"] = "calldecline";
+        //$tokenid = "dV_EyWWoTgeZnUlZanHft3:APA91bETNd6OrqnRBMhZhu-zeDKgY9TfIlloJKOzaVnxNGkqoyaHB549zyAO4kh-96L53EcglgCflBTZnfSZgtHX_KtInAEFa2RgXaYBe-mfaqkoaSGhxuY_BHpA0fsCSmpFoL-jZyRr";
+        $data = [
+            "to" => $tokenid,
+            "notification" => [
+                "body" => "Incomming Call From $name",
+                "page" => "chat",
+                "icon" => "ic_launcher",
+                "image" => "https://lh3.googleusercontent.com/a-/AOh14GiB7yiRkI4V4-YdxtDt27CWqF1U-0ZhfQ3mT_96uA"
+            ],
+            "data" => $calldata
+        ];
+        $this->android($data, [$tokenid]);
+    }
+
+    function callDecline_post() {
+        
+    }
+
+    function sendCallNotificationCallInvoke($receiver_id, $sender_id, $calldata) {
+        $reg_id = $this->singleUserGCMToken($receiver_id);
+        $tokenid = $reg_id;
+        $userobj = $this->singleUser($sender_id);
+        $name = $userobj ? $userobj["name"] : " Someone";
+        $calldata["name"] = $name;
+        $calldata["notificationtype"] = "callinvoke";
         //$tokenid = "dV_EyWWoTgeZnUlZanHft3:APA91bETNd6OrqnRBMhZhu-zeDKgY9TfIlloJKOzaVnxNGkqoyaHB549zyAO4kh-96L53EcglgCflBTZnfSZgtHX_KtInAEFa2RgXaYBe-mfaqkoaSGhxuY_BHpA0fsCSmpFoL-jZyRr";
         $data = [
             "to" => $tokenid,
@@ -119,21 +146,106 @@ class Api extends REST_Controller {
         return $userdata ? $userdata["reg_id"] : "";
     }
 
-    function setCallLog($logarray) {
-        $this->db->insert("user_videocall_log", $logarray);
+    function setWalletBalanceLast($user_id) {
+        $lastwallet = array("amount" => 0, "datetime" => date("Y-m-d H:i:s"), "minutes" => 0, "affect_with" => "no");
+        $this->db->where("user_id", $user_id);
+        $this->db->order_by('id desc');
+        $query = $this->db->get('user_wallet');
+        $userwalletlast = $query->row_array();
+        $returndata = $userwalletlast ? $userwalletlast : $lastwallet;
+        $amount = $returndata["amount"];
+        $returndata["minutes"] = 0;
+        if ($amount > 4) {
+            $divremain = $amount % $this->amt_per_minutes;
+            $actamount = $amount - $divremain;
+            $actminutes = $actamount / $this->amt_per_minutes;
+            $returndata["minutes"] = $actminutes;
+        }
+        return $returndata;
+    }
+
+    function getWalletBalanceLast_get($user_id) {
+        $this->response($this->setWalletBalanceLast($user_id));
+    }
+
+    function setWalletBalance($wallet_array) {
+        $userwallet = $this->setWalletBalanceLast($wallet_array["user_id"]);
+        $wlamount = $userwallet["amount"];
+        $lastamount = 0;
+        if ($wallet_array["affect_with"] == "call") {
+            $lastamount = $wlamount - $wallet_array["amount"];
+        } else {
+            $lastamount = $wlamount + $wallet_array["amount"];
+        }
+        $wallet_array["amount"] = $lastamount;
+        $wallet_array["datetime"] = date("Y-m-d H:i:s");
+        $this->db->insert("user_wallet", $wallet_array);
         $last_id = $this->db->insert_id();
     }
 
+    function setCallLog($logarray) {
+        $this->db->insert("user_videocall_log", $logarray);
+        $last_id = $this->db->insert_id();
+        if (isset($logarray["call_amount"])) {
+            $insertArray = array(
+                "call_minutes" => $logarray["call_minutes"],
+                "call_amount" => $logarray["call_amount"],
+            );
+            $this->db->set($insertArray)->where("id", $logarray["user_videocall_id"])->update("user_videocall");
+            $wallet_array = array(
+                "user_id" => $logarray["sender_id"],
+                "affect_with" => "call",
+                "amount" => $logarray["call_amount"]
+            );
+            $this->setWalletBalance($wallet_array);
+        }
+    }
+
+    function calculateMinuetsPayment($second) {
+        $calculation = array("payment" => $this->amt_per_minutes, "minutes" => 1);
+        if ($second > 60) {
+            $divider = $second / 60;
+            $remain = $second % 60;
+            $min_minutes = ($second - $remain) / 60;
+            $calculation["minutes"] = $min_minutes;
+            if ($remain) {
+                $min_minutes += 1;
+                $calculation["minutes"] = $min_minutes;
+            }
+            $calculation["payment"] = $this->amt_per_minutes * $min_minutes;
+        }
+        return $calculation;
+    }
+
+    function calculateMinuetsPayment_get($second) {
+        ($this->calculateMinuetsPayment($second));
+    }
+
     function updateCallStatus_post() {
+        $callstatus = $this->post("status");
+        $callstatusinit = $this->post("call_status");
+        $receiver_id = $this->post("receiver_id");
+        $sender_id = $this->post("sender_id");
+        $call_duation = $this->post("call_duration");
+
+        $payminutes = $this->calculateMinuetsPayment($call_duation);
+        if ($callstatus != "Outgoing Call") {
+            $payminutes["payment"] = 0;
+        }
         $insertArray = array(
             "user_videocall_id" => $this->post("user_videocall_id"),
             "sender_id" => $this->post("sender_id"),
             "receiver_id" => $this->post("receiver_id"),
             "status" => $this->post("status"),
             "call_date" => date("Y-m-d"),
-            "call_time" => date("H:i:s A"),
-            "call_duration" => $this->post("call_duration")
+            "call_time" => date("H:i:s"),
+            "call_duration" => $call_duation,
+            "call_minutes" => $payminutes["minutes"],
+            "call_amount" => $payminutes["payment"],
         );
+        if ($callstatusinit == "calldecline") {
+            $this->sendCallNotificationCallCencel($receiver_id, $sender_id, $insertArray);
+        }
         $this->setCallLog($insertArray);
     }
 
@@ -163,13 +275,13 @@ class Api extends REST_Controller {
             "receiver_id" => $receiver_id,
             "status" => "callinit",
             "call_date" => date("Y-m-d"),
-            "call_time" => date("H:i:s A"),
+            "call_time" => date("H:i:s"),
             "call_duration" => ""
         );
         $this->db->insert("user_videocall", $insertArray);
         $last_id = $this->db->insert_id();
         $insertArray["user_videocall_id"] = $last_id;
-        $this->sendCallNotificationV2($receiver_id, $sender_id, $insertArray);
+        $this->sendCallNotificationCallInvoke($receiver_id, $sender_id, $insertArray);
 
         $insertArray = array(
             "user_videocall_id" => $last_id,
@@ -177,7 +289,7 @@ class Api extends REST_Controller {
             "receiver_id" => $receiver_id,
             "status" => "Outgoing Call",
             "call_date" => date("Y-m-d"),
-            "call_time" => date("H:i:s A"),
+            "call_time" => date("H:i:s"),
             "call_duration" => ""
         );
         $this->setCallLog($insertArray);
@@ -187,7 +299,7 @@ class Api extends REST_Controller {
             "receiver_id" => $sender_id,
             "status" => "Incomming Call",
             "call_date" => date("Y-m-d"),
-            "call_time" => date("H:i:s A"),
+            "call_time" => date("H:i:s"),
             "call_duration" => ""
         );
         $this->setCallLog($insertArray);
@@ -333,7 +445,7 @@ class Api extends REST_Controller {
 
         $daylimit = $membershipdata['valid_days'];
         $current_date = date("Y-m-d");
-        $current_time = date("H:i:s A");
+        $current_time = date("H:i:s");
         $last_date = date('Y-m-d', strtotime($current_date . " + $daylimit days"));
         $insertArray = array(
             "member_id" => $membershipdata['member_id'],
@@ -356,6 +468,12 @@ class Api extends REST_Controller {
         );
         $this->db->insert("user_calling_package", $insertArray);
         $last_id = $this->db->insert_id();
+        $wallet_array = array(
+            "amount" => $membershipdata['final_price'],
+            "user_id" => $membershipdata['user_id'],
+            "affect_with" => "order"
+        );
+        $this->setWalletBalance($wallet_array);
         $responsedata = array("order_id" => $last_id);
         $this->response($responsedata);
     }
@@ -471,6 +589,57 @@ class Api extends REST_Controller {
         $this->db->order_by("id desc");
         $query = $this->db->get("user_videocall");
         print_r($query->row_array());
+    }
+
+    function callDurationCalculator($seconds) {
+
+        $actminuts = 0;
+        if ($seconds > 60) {
+            $actsecond = $seconds % 60;
+            $actminuts = round(($seconds - $actsecond) / 60, 1);
+        }
+        $second = $seconds % 60;
+        return array("minutes" => $actminuts, "seconds" => $second);
+    }
+
+    function getUserCallLog_get($user_id) {
+        $calllogdata = [];
+        $this->db->where("sender_id", $user_id);
+        $this->db->or_where("receiver_id", $user_id);
+        $this->db->order_by("id desc");
+        $query = $this->db->get("user_videocall");
+        $callinitdata = $query->result_array();
+
+        foreach ($callinitdata as $key => $value) {
+
+            $this->db->where("user_videocall_id", $value["id"]);
+            $this->db->where("call_duration>0");
+            $query = $this->db->get("user_videocall_log");
+            $calllogdatasingle = $query->row_array();
+            if ($calllogdatasingle) {
+                if ($calllogdatasingle["sender_id"] == $user_id) {
+                    $caller_id = $calllogdatasingle["receiver_id"];
+                }
+                if ($calllogdatasingle["receiver_id"] == $user_id) {
+                    $caller_id = $calllogdatasingle["sender_id"];
+                }
+                $this->db->where('id', $caller_id);
+                $query = $this->db->get('app_user');
+                $userdata = $query->row_array();
+                $calllogdatasingle["name"] = $userdata["name"];
+                $calllogdatasingle["user_id"] = $caller_id;
+
+                $acttime = $calllogdatasingle["call_time"];
+                $date = date_create($calllogdatasingle["call_date"]);
+                $calllogdatasingle["date"] = date_format($date, "d M y");
+
+//                $calllogdatasingle["time"] = date_format($date, "H:i A");
+                $calllogdatasingle["time"] = date("h:i A", strtotime($acttime));
+                $calllogdatasingle["duration"] = $this->callDurationCalculator($calllogdatasingle["call_duration"]);
+                array_push($calllogdata, $calllogdatasingle);
+            }
+        }
+        $this->response($calllogdata);
     }
 
 //
