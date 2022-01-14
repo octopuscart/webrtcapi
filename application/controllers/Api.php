@@ -354,6 +354,39 @@ class Api extends REST_Controller {
         }
     }
 
+    function registration_post() {
+        $postdata = $this->post();
+        unset($postdata["otp"]);
+        $email = $postdata["email"];
+        $mobile_no = $postdata["contact_no"];
+
+        $this->db->where("email", $email);
+        $this->db->or_where("contact_no", $mobile_no);
+        $query = $this->db->get('app_user');
+        $userdata = $query->row_array();
+        if ($userdata) {
+            $this->response(array("status" => "401", "message" => "Email or mobile no. already registered"));
+        } else {
+            $this->db->insert("app_user", $postdata);
+            $insert_id = $this->db->insert_id();
+            $postdata["id"] = $insert_id;
+            if ($insert_id) {
+                $imagepath = base_url() . "assets/profile_image/";
+                $profile_image = $postdata["profile_image"];
+                if ($profile_image) {
+                    $profile_image = $imagepath . $profile_image;
+                } else {
+                    $profile_image = $imagepath . "default.png";
+                }
+                $postdata["profile_image"] = $profile_image;
+
+                $this->response(array("status" => "100", "userdata" => $postdata, "message" => "Your account has been created."));
+            } else {
+                $this->response(array("status" => "402", "message" => "Unable to create account please try again"));
+            }
+        }
+    }
+
     function getUsers_get($user_id) {
         $this->db->where('id!=', $user_id);
         $query = $this->db->get('app_user');
