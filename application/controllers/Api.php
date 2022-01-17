@@ -117,6 +117,7 @@ class Api extends REST_Controller {
         $userobj = $this->singleUser($sender_id);
         $name = $userobj ? $userobj["name"] : " Someone";
         $calldata["name"] = $name;
+        $calldata["profile_image"] = $userobj["profile_image"];
         $calldata["notificationtype"] = "callinvoke";
         //$tokenid = "dV_EyWWoTgeZnUlZanHft3:APA91bETNd6OrqnRBMhZhu-zeDKgY9TfIlloJKOzaVnxNGkqoyaHB549zyAO4kh-96L53EcglgCflBTZnfSZgtHX_KtInAEFa2RgXaYBe-mfaqkoaSGhxuY_BHpA0fsCSmpFoL-jZyRr";
         $data = [
@@ -125,7 +126,7 @@ class Api extends REST_Controller {
                 "body" => "Incomming Call From $name",
                 "page" => "chat",
                 "icon" => "ic_launcher",
-                "image" => "https://lh3.googleusercontent.com/a-/AOh14GiB7yiRkI4V4-YdxtDt27CWqF1U-0ZhfQ3mT_96uA"
+                "image" => $userobj["profile_image"]
             ],
             "data" => $calldata
         ];
@@ -136,6 +137,14 @@ class Api extends REST_Controller {
         $this->db->where('id', $user_id);
         $query = $this->db->get('app_user');
         $userdata = $query->row_array();
+        $imagepath = base_url() . "assets/profile_image/";
+        $profile_image = $userdata["profile_image"];
+        if ($profile_image) {
+            $profile_image = $imagepath . $profile_image;
+        } else {
+            $profile_image = $imagepath . "default.png";
+        }
+        $userdata["profile_image"] = $profile_image;
         return $userdata;
     }
 
@@ -342,8 +351,15 @@ class Api extends REST_Controller {
         $this->db->where('password', $password);
         $query = $this->db->get('app_user');
         $userdata = $query->row_array();
-
         if ($userdata) {
+            $imagepath = base_url() . "assets/profile_image/";
+            $profile_image = $userdata["profile_image"];
+            if ($profile_image) {
+                $profile_image = $imagepath . $profile_image;
+            } else {
+                $profile_image = $imagepath . "default.png";
+            }
+            $userdata["profile_image"] = $profile_image;
             if ($userdata["password"] == $password) {
                 $this->response(array("status" => "100", "userdata" => $userdata, "message" => "You have logged in successfully"));
             } else {
@@ -387,14 +403,169 @@ class Api extends REST_Controller {
         }
     }
 
+    function userPresenceNotification($user_id, $status) {
+        $queryraw = "SELECT reg_id FROM `gcm_registration` as gr 
+  join user_presence as up on up.user_id = gr.user_id
+  where up.status = 'Online' and gr.user_id !=$user_id";
+        $query = $this->db->query($queryraw);
+        $userregdata = $query->result_array();
+        $regids = [];
+        foreach ($userregdata as $key => $value) {
+            array_push($regids, $value["reg_id"]);
+        }
+      
+        $userobj = $this->singleUser($user_id);
+        $calldata = array();
+        $calldata["user_id"] = $user_id;
+        $calldata["name"] = $userobj["name"];
+        $calldata["profile_image"] = $userobj["profile_image"];
+        $calldata["presence"] = $status;
+        $data = [
+            "registration_ids" => $regids,
+            "notification" => [
+                "body" => $userobj["name"] . " is back to $status",
+                "page" => "chat",
+                "icon" => "ic_launcher",
+                "image" => $userobj["profile_image"]
+            ],
+            "data" => $calldata
+        ];
+        $this->android($data, [$regids]);
+//        presence
+    }
+
+    function userPresenceNotification_get($user_id, $status) {
+        $this->userPresenceNotification($user_id, $status);
+    }
+
+    function setPresence_post() {
+        $postdata = $this->post();
+        $user_id = $postdata["user_id"];
+
+        $this->db->where("user_id", $user_id);
+        $query = $this->db->get('user_presence');
+        $userpresencedata = $query->row_array();
+
+
+        $this->userPresenceNotification($user_id, $postdata["status"]);
+
+
+        if ($userpresencedata) {
+            unset($postdata["user_id"]);
+            $this->db->where('user_id', $user_id);
+            $this->db->set($postdata);
+            $query = $this->db->update('user_presence');
+        } else {
+            $this->db->insert("user_presence", $postdata);
+            $insert_id = $this->db->insert_id();
+        }
+    }
+
+    function getSinglePresence($user_id) {
+        $this->db->where("user_id", $user_id);
+        $query = $this->db->get('user_presence');
+        $userpresencedata = $query->row_array();
+        if ($userpresencedata) {
+            
+        } else {
+            $userpresencedata = array("status" => "Offline", "date" => "2022-01-15", "time" => "12:00:00 AM");
+        }
+        $cdate = $userpresencedata['date'];
+        $ctime = $userpresencedata['time'];
+        // Declare and define two dates
+        $date1 = strtotime("$cdate $ctime");
+
+        $date2 = strtotime(Date("Y-m-d h:i:s a"));
+
+        // Formulate the Difference between two dates
+        $diff = abs($date2 - $date1);
+
+
+
+        // To get the year divide the resultant date into
+        // total seconds in a year (365*60*60*24)
+        $years = floor($diff / (365 * 60 * 60 * 24));
+
+        // To get the month, subtract it with years and
+        // divide the resultant date into
+        // total seconds in a month (30*60*60*24)
+        $months = floor(($diff - $years * 365 * 60 * 60 * 24) / (30 * 60 * 60 * 24));
+
+        // To get the day, subtract it with years and
+        // months and divide the resultant date into
+        // total seconds in a days (60*60*24)
+        $days = floor(($diff - $years * 365 * 60 * 60 * 24 -
+                $months * 30 * 60 * 60 * 24) / (60 * 60 * 24));
+
+        // To get the hour, subtract it with years,
+        // months & seconds and divide the resultant
+        // date into total seconds in a hours (60*60)
+        $hours = floor(($diff - $years * 365 * 60 * 60 * 24 - $months * 30 * 60 * 60 * 24 - $days * 60 * 60 * 24) / (60 * 60));
+
+        // To get the minutes, subtract it with years,
+        // months, seconds and hours and divide the
+        // resultant date into total seconds i.e. 60
+        $minutes = floor(($diff - $years * 365 * 60 * 60 * 24 - $months * 30 * 60 * 60 * 24 - $days * 60 * 60 * 24 - $hours * 60 * 60) / 60);
+
+        // To get the minutes, subtract it with years,
+        // months, seconds, hours and minutes
+        $seconds = floor(($diff - $years * 365 * 60 * 60 * 24 - $months * 30 * 60 * 60 * 24 - $days * 60 * 60 * 24 - $hours * 60 * 60 - $minutes * 60));
+
+        // Print the result
+//         printf("%d years, %d months, %d days, %d hours, "
+//       . "%d minutes, %d seconds", $years, $months,
+//               $days, $hours, $minutes, $seconds);
+
+        $timestring = "Long Time Ago";
+        $checklongtime = 0;
+        if ($years) {
+            $checklongtime = 1;
+            $timestring = "$years Year(s) ago";
+        }
+        if ($months) {
+            $checklongtime = 1;
+            $timestring = "$month Month(s) ago";
+        }
+        if ($days) {
+            $checklongtime = 1;
+            $timestring = "$days Day(s) ago";
+        }
+        if ($checklongtime == 0) {
+            if ($hours) {
+                $timestring = "$hours Hour(s) ago";
+            }
+            if ($minutes) {
+                $timestring = "$minutes Minute(s) ago";
+            }
+        }
+        $userpresencedata["timestring"] = $timestring;
+        return $userpresencedata;
+    }
+
+    function getUserPresence_get($user_id) {
+        $presence = $this->getSinglePresence($user_id);
+        $this->response($presence);
+    }
+
     function getUsers_get($user_id) {
         $this->db->where('id!=', $user_id);
         $query = $this->db->get('app_user');
         $userdata = $query->result_array();
         $finaluser = [];
         foreach ($userdata as $key => $value) {
-            $value["presence"] = "Offline";
-            $value["presence_datetime"] = "";
+            $imagepath = base_url() . "assets/profile_image/";
+            $profile_image = $value["profile_image"];
+            if ($profile_image) {
+                $profile_image = $imagepath . $profile_image;
+            } else {
+                $profile_image = $imagepath . "default.png";
+            }
+            $value["profile_image"] = $profile_image;
+
+            $presence = $this->getSinglePresence($value["id"]);
+
+            $value["presence"] = $presence["status"];
+            $value["presence_data"] = $presence;
             array_push($finaluser, $value);
         }
         $this->response($finaluser);
@@ -673,6 +844,48 @@ class Api extends REST_Controller {
             }
         }
         $this->response($calllogdata);
+    }
+
+    function fileupload_post() {
+
+        $ext1 = explode('.', $_FILES['file']['name']);
+        $ext = strtolower(end($ext1));
+        $filename = $type . rand(1000, 10000);
+
+        $actfilname = $_FILES['file']['name'];
+
+        $filelocation = "assets/profile_image/";
+        move_uploaded_file($_FILES["file"]['tmp_name'], $filelocation . $actfilname);
+
+
+        $this->response(array("status" => "200"));
+    }
+
+    function updateProfile_post() {
+        $postdata = $this->post();
+        $user_id = $postdata["id"];
+        unset($postdata["id"]);
+        $this->db->where("id", $user_id);
+        $this->db->set($postdata);
+        $this->db->update('app_user');
+        $postdata["id"] = $user_id;
+
+        $this->db->where("id", $user_id);
+        $query = $this->db->get('app_user');
+        $userdata = $query->row_array();
+
+        $imagepath = base_url() . "assets/profile_image/";
+        if (isset($postdata["profile_image"])) {
+            $userdata["profile_image"] = $postdata["profile_image"];
+        }
+        $profile_image = $userdata["profile_image"];
+        if ($profile_image) {
+            $profile_image = $imagepath . $profile_image;
+        } else {
+            $profile_image = $imagepath . "default.png";
+        }
+        $userdata["profile_image"] = $profile_image;
+        $this->response(array("status" => "200", "userdata" => $userdata, "message" => "Profile updated successfully"));
     }
 
 //
