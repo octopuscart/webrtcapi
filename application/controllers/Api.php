@@ -580,9 +580,10 @@ class Api extends REST_Controller {
             $checklongtime = 1;
             $timestring = "$years Year(s) ago";
         }
+       
         if ($months) {
             $checklongtime = 1;
-            $timestring = "$month Month(s) ago";
+            $timestring = "$months Month(s) ago";
         }
         if ($days) {
             $checklongtime = 1;
