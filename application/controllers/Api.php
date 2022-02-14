@@ -316,6 +316,64 @@ class Api extends REST_Controller {
         $this->response(array('token' => $token, "channel" => $channelName, "user_videocall_id" => $last_id));
     }
 
+    public function getAccessToken2_get($sender_id, $receiver_id) {
+        $appID = "da60aa0af04c4dc1bdb154557cf32f71";
+        $appCertificate = "ba1eb1ef6a47460ca7de3672c468094e";
+        $channelName = "myc" . rand(10000, 999999);
+        $uid = 0;
+        $uidStr = "0";
+        $role = RtcTokenBuilder::RoleAttendee;
+        $expireTimeInSeconds = 3600;
+        $currentTimestamp = (new DateTime("now", new DateTimeZone('UTC')))->getTimestamp();
+        $privilegeExpiredTs = $currentTimestamp + $expireTimeInSeconds;
+
+        $token = RtcTokenBuilder::buildTokenWithUid($appID, $appCertificate, $channelName, $uid, $role, $privilegeExpiredTs);
+//        echo 'Token with int uid: ' . $token;
+
+        $token = RtcTokenBuilder::buildTokenWithUserAccount($appID, $appCertificate, $channelName, $uidStr, $role, $privilegeExpiredTs);
+        // echo 'Token with user account: ' . $token . PHP_EOL;
+
+
+
+        $insertArray = array(
+            "token" => $token,
+            "channel" => $channelName,
+            "sender_id" => $sender_id,
+            "receiver_id" => $receiver_id,
+            "status" => "callinit",
+            "call_date" => date("Y-m-d"),
+            "call_time" => date("H:i:s"),
+            "call_duration" => ""
+        );
+        $this->db->insert("user_videocall", $insertArray);
+        $last_id = $this->db->insert_id();
+        $insertArray["user_videocall_id"] = $last_id;
+        $this->sendCallNotificationCallInvoke($receiver_id, $sender_id, $insertArray);
+
+        $insertArray = array(
+            "user_videocall_id" => $last_id,
+            "sender_id" => $sender_id,
+            "receiver_id" => $receiver_id,
+            "status" => "Outgoing Call",
+            "call_date" => date("Y-m-d"),
+            "call_time" => date("H:i:s"),
+            "call_duration" => ""
+        );
+        $this->setCallLog($insertArray);
+        $insertArray = array(
+            "user_videocall_id" => $last_id,
+            "sender_id" => $receiver_id,
+            "receiver_id" => $sender_id,
+            "status" => "Incomming Call",
+            "call_date" => date("Y-m-d"),
+            "call_time" => date("H:i:s"),
+            "call_duration" => ""
+        );
+        $this->setCallLog($insertArray);
+
+        $this->response(array('rtcToken' => $token, "channel" => $channelName, "user_videocall_id" => $last_id));
+    }
+
     function getVideoCall_get($user_id) {
         $this->db->where("receiver_id", $user_id);
         $this->db->where("status", "callinit");
@@ -413,7 +471,7 @@ class Api extends REST_Controller {
         foreach ($userregdata as $key => $value) {
             array_push($regids, $value["reg_id"]);
         }
-      
+
         $userobj = $this->singleUser($user_id);
         $calldata = array();
         $calldata["user_id"] = $user_id;
@@ -792,7 +850,8 @@ class Api extends REST_Controller {
     function getLastToken_get() {
         $this->db->order_by("id desc");
         $query = $this->db->get("user_videocall");
-        print_r($query->row_array());
+        $tokenarray = $query->row_array();
+        $this->response(array("rtcToken" => $tokenarray["token"]));
     }
 
     function callDurationCalculator($seconds) {
