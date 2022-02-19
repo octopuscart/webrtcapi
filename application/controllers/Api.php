@@ -132,6 +132,23 @@ class Api extends REST_Controller {
         ];
         $this->android($data, [$tokenid]);
     }
+    
+    function testNotification_get($receiver_id){
+        echo $receiver_id;
+       echo  $reg_id = $this->singleUserGCMToken($receiver_id);
+        $tokenid = $reg_id;
+        $data = [
+            "to" => $tokenid,
+            "notification" => [
+                "body" => "Incomming Call",
+                "page" => "chat",
+                "icon" => "ic_launcher",
+           
+            ],
+          
+        ];
+      echo   $this->android($data, [$tokenid]);
+    }
 
     function singleUser($user_id) {
         $this->db->where('id', $user_id);
@@ -316,6 +333,82 @@ class Api extends REST_Controller {
         $this->response(array('token' => $token, "channel" => $channelName, "user_videocall_id" => $last_id));
     }
 
+    
+    public function getAccessToken3_get($sender_id, $receiver_id) {
+        $appID = "da60aa0af04c4dc1bdb154557cf32f71";
+        $appCertificate = "ba1eb1ef6a47460ca7de3672c468094e";
+        $channelName = "myc" . rand(10000, 999999);
+        $uid = 0;
+        $uidStr = "0";
+        $role = RtcTokenBuilder::RoleAttendee;
+        $expireTimeInSeconds = 3600;
+        $currentTimestamp = (new DateTime("now", new DateTimeZone('UTC')))->getTimestamp();
+        $privilegeExpiredTs = $currentTimestamp + $expireTimeInSeconds;
+
+        $token = RtcTokenBuilder::buildTokenWithUid($appID, $appCertificate, $channelName, $uid, $role, $privilegeExpiredTs);
+//        echo 'Token with int uid: ' . $token;
+
+        $token = RtcTokenBuilder::buildTokenWithUserAccount($appID, $appCertificate, $channelName, $uidStr, $role, $privilegeExpiredTs);
+        // echo 'Token with user account: ' . $token . PHP_EOL;
+
+
+
+        $insertArray = array(
+            "token" => $token,
+            "channel" => $channelName,
+            "sender_id" => $sender_id,
+            "receiver_id" => $receiver_id,
+            "status" => "callinit",
+            "call_date" => date("Y-m-d"),
+            "call_time" => date("H:i:s"),
+            "call_duration" => ""
+        );
+        $this->db->insert("user_videocall", $insertArray);
+        $last_id = $this->db->insert_id();
+       
+
+        $this->response(array('token' => $token, "channel" => $channelName, "user_videocall_id" => $last_id));
+    }
+    
+    public function callNotification_get($sender_id, $receiver_id, $token, $channelName){
+        $insertArray = array(
+            "token" => $token,
+            "channel" => $channelName,
+            "sender_id" => $sender_id,
+            "receiver_id" => $receiver_id,
+            "status" => "callinit",
+            "call_date" => date("Y-m-d"),
+            "call_time" => date("H:i:s"),
+            "call_duration" => ""
+        );
+        $this->db->insert("user_videocall", $insertArray);
+        $last_id = $this->db->insert_id();
+        $insertArray["user_videocall_id"] = $last_id;
+        $this->sendCallNotificationCallInvoke($receiver_id, $sender_id, $insertArray);
+
+        $insertArray = array(
+            "user_videocall_id" => $last_id,
+            "sender_id" => $sender_id,
+            "receiver_id" => $receiver_id,
+            "status" => "Outgoing Call",
+            "call_date" => date("Y-m-d"),
+            "call_time" => date("H:i:s"),
+            "call_duration" => ""
+        );
+        $this->setCallLog($insertArray);
+        $insertArray = array(
+            "user_videocall_id" => $last_id,
+            "sender_id" => $receiver_id,
+            "receiver_id" => $sender_id,
+            "status" => "Incomming Call",
+            "call_date" => date("Y-m-d"),
+            "call_time" => date("H:i:s"),
+            "call_duration" => ""
+        );
+        $this->setCallLog($insertArray);
+    }
+
+    
     public function getAccessToken2_get($sender_id, $receiver_id) {
         $appID = "da60aa0af04c4dc1bdb154557cf32f71";
         $appCertificate = "ba1eb1ef6a47460ca7de3672c468094e";
@@ -670,7 +763,7 @@ class Api extends REST_Controller {
         $this->response(array("status" => "200", "last_id" => $insert_id));
     }
 
-    function testNotification_get() {
+    function testNotification2_get() {
         $tokenid = "c3m5tbYuQmmYXCJvi_FyMk:APA91bG8CgKAbE2Tqg_Bxd_4kjtpQy5ydyNKFi2KfyCI668G8P5vwaxHe3Ie5JR9FcXHjmU2su9sFo2hr9_IY2djytPQHn_zanqgBXknNiCaSN5wQZCEEHABqOBcyt9uuycQTbYChp0q";
         $tokenid = "f2njC-3wT-ehBmvRb9GUff:APA91bE77Jy6Tr1K1AE3c7lDIXNGdqy7ZW73v4uYSZaCYTFLOpucaQFOw0r5tD2ZD9RiEoPjqA2s7o2S1CYPQg6ZKhgJ_NTmZDRm4B7O_dInxPzNzqU6ed0Z9TVa_4CSQEHL3WQCQcNM";
         $data = [

@@ -7,7 +7,7 @@ require(APPPATH . "libraries/razorpay/Razorpay.php");
 
 use Razorpay\Api\Api;
 
-class ApiFireStore extends REST_Controller {
+class ApiPayment extends REST_Controller {
 
     public function __construct() {
         parent::__construct();
